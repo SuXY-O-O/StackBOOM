@@ -60,11 +60,13 @@ IF = "if";
 IFELSE = "ifelse";
 DEF = "def";
 POP = "pop";
-KEYWORD = NEWSTACK | ENDSTACK | WHILE | BREAK | FOR | CONTINUE | IF | IFELSE | DEF | POP;
+PRINT = "print";
+RETURN = "return";
+KEYWORD = WHILE | BREAK | FOR | CONTINUE | IF | IFELSE | DEF | POP | PRINT | RETURN;
 ```
 ## 2.2 运算符
 ```
-OPERATOR = "+" | "add" | "-" | "sub" | "*" | "mul" | "\" | "div" | "e" | "**" | "pow" | "sqrt";
+OPERATOR = "+" | "add" | "-" | "sub" | "*" | "mul" | "\" | "div" | "e" | "**" | "pow" | "sqrt" | "%" | "mod";
 JUDGE = "==" | "!=" | ">" | "<" | ">=" | "<=";
 LOGIC = "&" | "and" | "|" | "or";
 POPMARK = ",";
@@ -76,9 +78,10 @@ MARK = POPMARK | SAVEMARK;
 ```
 LETTER = a | b | c | ... | z;
 ALPHA = A | B | C | ... | Z;
-NUM = 0 | 1 | 2 | .. | 9;
+NUM = 0 | 1 | 2 | ... | 9;
 NAME = (LETTER | ALPHA | "_"), {LETTER | ALPHA | "_" | NUMBER};
-IDENTIFIER = "/", NAME;
+OPNAME = "/", NAME;
+VARNAME = "//", NAME;
 ```
 
 ## 2.4 数字与字符
@@ -92,16 +95,28 @@ NUMBER = INTEGER | FLOAT;
 ```
 
 # 3. 语法设计
+
+## 3.1 语句与语句块
 ```
-OP = NAME | KEYWORD | OPERATOR;
-ITEM = IDENTIFITER | NUMBER;
-BLOCK = "{", [ITEM | OP | BLOCK], {SPACE, [ITEM | OP | BLOCK]}, "}", EOL;
-OPLINE = [BLOCK | ITEM], {SPACE, BLOCK | ITEM}, SPACE, OP, EOL;
-JUDGEBLOCK = "{", (BLOCK | ITEM), SPACE, (BLOCK | ITEM), SPACE, JUDGE, "}", EO:;
-JUDGELINE = JUDGEBLOCK | ("{", JUDGEBLOCK, [SPACE, LOGIC, SPACE, JUDGEBLOCK], "}"), EOL;
-IFLINE = OPLINE, JUDGELINE, IF, EOL;
-IFELSELINE = OPLINE, OPLINE, JUDGELINE, IFELSE, EOL;
-WHILELINE = OPLINE, 
+OP = OPNAME | KEYWORD | OPERATOR;
+ITEM = VARNAME | NUMBER | STRING;
+OPITEM = ITEM, (POPMARK | SAVEMARK);
+OPLINE = [OPITEM, {SPACE, OPITEM}, SPACE], OP, EOL;
+OPBLOCK = OPLINE | ("{", OPLINE, {SPACE, OPLINE}, "}", EOL);
+JUDGELINE = (OPBLOCK | (ITEM, SPACE)), (OPBLOCK | (ITEM, SPACE)), JUDGE, EOL;
+JUDGEBLOCK = JUDGELINE | ("{", JUDGELINE, [SPACE, LOGIC, SPACE, JUDGEBLOCK], "}", EOL);
+IFBLOCK = OPBLOCK, JUDGEBLOCK, IF, EOL;
+IFELSEBLOCK = OPBLOCK, OPBLOCK, JUDGEBLOCK, IFELSE, EOL;
+WHILEBLOCK = OPBLOCK, JUDGEBLOCK, WHILE, EOL; 
+BLOCK = OPBLOCK | JUDGEBLOCK | IFBLOCK | IFELSEBLOCK | WHILEBLOCK;
+VARDEF = VARNAME, SPACE, (NUMBER | STRING), SPACE, DEF, EOL;
+OPDEF = OPNAME, SPACE, NUM, SPACE, BLOCK, DEF, EOL;
+```
+
+## 3.2 整体程序
+```
+STACK = NEWSTACK, EOL, STACK | BLOCK，{STACK | BLOCK}, ENDSTACK;
+PROGRAM = STACK, {EOL, STACK};
 ```
 
 # 4. 语义说明
@@ -109,3 +124,81 @@ WHILELINE = OPLINE,
 # 5. 与对标语言的差异
 
 # 6. 部分用法示例
+## 6.1 基础程序示例
+下面的程序可以实现斐波那契数列前13项的打印输出：
+```
+news
+    //a 1 def
+    //b 1 def
+    //i 0 def
+    //a, print
+    //b, print
+    {
+        {
+            //a; //b, +
+            print
+        }
+        {
+            //b; //a, add
+            print
+        }
+        {
+            //i, 2, % 
+            0 ==
+        }
+        ifelse
+        //i; 1, +
+        pop
+    }
+    {
+        //i 10 <=
+    }
+    while
+ends
+```
+下面进行一些说明：
+- 对于每一个值，例如上述程序中的`//a`、`1`等，在出现时相当于一次入栈操作；
+- 对于每一个操作，如`def`、`add`等，他们有预定义完全的需要的参数数量以及类型，例如`add`的操作需要两个数（整数或浮点数），那么他会从栈顶取出两个数（出栈），在他们类型正确的情况下进行运算，并将运算结果入栈；
+- 对于`OPITEM`，末尾有标识，分以下几种情况：
+    + 标识前为数或字符串，标识为`SAVEMARK`：该值会按顺序留存在栈中，不受操作出栈的影响；
+    + 标识前为数或字符串，标识为`POPMARK`：该值会受操作出栈的影响，运算后不再存储在栈中；
+    + 标识前为变量名，标识为`SAVEMARK`：该变量对应值会在操作时出栈；操作得到的结果会在入栈的同时存储到对应变量名下；
+    + 标识前为变量名，标识为`POPMARK`：该变量对应值会在操作时出栈。
+
+语法树//TODO
+
+## 6.2 函数定义
+下面程序将6.1中的循环改变为递归：
+```
+news
+    /once 3 {
+        //a 0 def
+        //b 0 def
+        //a; add
+        add
+        //b; add
+        print
+        //i 0 def
+        //i; add
+        return
+        {
+            //i, 1 add 
+            //a, //b, /once
+        }
+        //i 10 >
+        ifelse
+    }
+    def
+    0, 1, 1, /once
+ends 
+```
+对于上述程序进行部分解释：
+- `/once`为函数名称，后面的`3`表示函数调用时，栈中至少有三个值（数字或字符串），也就是说函数有三个参数；
+- 因为语言没有为函数参数进行命名，因而只能用顺序来确定各参数意义。`//a`用于取出并存储栈顶部的参数，取出办法为初始化`//a`为0，并使用`//a; add`来将0与栈顶值相加（因为`add`操作会取出栈顶两个值进行运算）；因为`;`的存在，`add`的结果被存放到栈顶后，同时会对`//a`进行赋值。
+- `//b`用于存储传入的栈顶的两个参数的加法运算结果。
+- 传入的第三个参数意义为6.1中的`//i`，对它的值进行读取，并判断是否结束递归。
+
+## 6.3 多线程
+本语言的`NEWSTACK`和`ENDSTACK`中间囊括的代码段运行时使用了“同一个栈”，换句话说可以认为该段程序运行在一个线程上。
+
+这里将不再给出具体示例，仅为指出如此设计的目的。
