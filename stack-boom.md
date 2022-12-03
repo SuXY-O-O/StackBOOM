@@ -8,7 +8,7 @@
 <center><font size=6><b>程序设计语言原理大作业</b></font></center>
 <br/>
 
-<center><font color=grey>苏星熠（ZY2206148） HHC（？？？？？）</font></center>
+<center><font color=grey>苏星熠（ZY2206148） 黄浩程（ZY2206134）</font></center>
 <center><font color=grey>2022年12月</font></center>
 
 ---
@@ -86,7 +86,6 @@ VARNAME = "//", NAME;
 
 ## 2.4 数字与字符
 ```
-STRING = """, {所有字符}, """;
 SPACE = " ";
 EOL = "/n";
 INTEGER = ["-"], NUM, {NUM};
@@ -98,28 +97,145 @@ NUMBER = INTEGER | FLOAT;
 
 ## 3.1 语句与语句块
 ```
+VARDEF = VARNAME SPACE NUMBER SPACE DEF EOL;
+OPDEF = OPNAME SPACE NUM SPACE BLOCK DEF EOL;
+VARDEFBLOCK = VARDEF
+			| VARDEF VARDEFBLOCK
+OPDEFBLOCK = OPDEF
+		   | OPDEF OPDEFBLOCK
+DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK
 OP = OPNAME | KEYWORD | OPERATOR;
-ITEM = VARNAME | NUMBER | STRING;
-OPITEM = ITEM, (POPMARK | SAVEMARK);
-OPLINE = [OPITEM, {SPACE, OPITEM}, SPACE], OP, EOL;
-OPBLOCK = OPLINE | ("{", OPLINE, {SPACE, OPLINE}, "}", EOL);
-JUDGELINE = (OPBLOCK | (ITEM, SPACE)), (OPBLOCK | (ITEM, SPACE)), JUDGE, EOL;
-JUDGEBLOCK = JUDGELINE | ("{", JUDGELINE, [SPACE, LOGIC, SPACE, JUDGEBLOCK], "}", EOL);
-IFBLOCK = OPBLOCK, JUDGEBLOCK, IF, EOL;
-IFELSEBLOCK = OPBLOCK, OPBLOCK, JUDGEBLOCK, IFELSE, EOL;
-WHILEBLOCK = OPBLOCK, JUDGEBLOCK, WHILE, EOL; 
-BLOCK = OPBLOCK | JUDGEBLOCK | IFBLOCK | IFELSEBLOCK | WHILEBLOCK;
-VARDEF = VARNAME, SPACE, (NUMBER | STRING), SPACE, DEF, EOL;
-OPDEF = OPNAME, SPACE, NUM, SPACE, BLOCK, DEF, EOL;
+ITEM = VARNAME | NUMBER;
+OPITEM = ITEM POPMARK | ITEM SAVEMARK;
+OPLIST = OPITEM 
+	   | OPITEM SPACE OPLIST;
+OPLINE = OP EOL
+	   | OPLIST SPACE OP EOL;
+OPLINES = OPLINE
+		| OPLINE EOL OPLINES;
+OPBLOCK = OPLINE
+	    | "{" OPLINES "}" EOL;
+JUDGEITEM = OPBLOCK | ITEM SPACE
+JUDGELINE = JUDGEITEM JUDGEITEM JUDGE EOL;
+MULTIJUDGELINE = JUDGELINE
+		       | JUDGELINE LOGIC SPACE JUDGELINES
+JUDGEBLOCK = JUDGELINE 
+		   | "{" JUDGELINE LOGIC SPACE MULTIJUDGELINE "}" EOL;
+IFBLOCK = OPBLOCK JUDGEBLOCK IF EOL;
+IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
+WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
+BLOCK = DEFBLOCK
+	  | OPBLOCK 
+	  | JUDGEBLOCK 
+	  | IFBLOCK 
+	  | IFELSEBLOCK 
+	  | WHILEBLOCK
+	  | BLOCK BLOCK;
 ```
 
 ## 3.2 整体程序
 ```
-STACK = NEWSTACK, EOL, STACK | BLOCK，{STACK | BLOCK}, ENDSTACK;
-PROGRAM = STACK, {EOL, STACK};
+//STACK = NEWSTACK EOL, STACK | BLOCK，{STACK | BLOCK}, ENDSTACK;
+STACK = NEWSTACK EOL BLOCK EOL ENDSTACK
+	  | NEWSTACK EOL STACK EOL ENDSTACK
+	  | STACK EOL STACK
+
+PROGRAM = STACK
 ```
 
 # 4. 语义说明
+
+## 4.1 存储域 & 辅助函数
+
+```
+Store = Location → ( stored Storable + undefined + unused)
+Stack = Location → Store
+● 语义函数
+empty_store : Store
+allocate : Store → Store × Location
+deallocate : Store × Location → Store
+update : Store × Location × Storable → Store
+fetch : Store × Location → Storable
+push : stble -> Stack
+
+● 语义
+empty_store = λloc.unused
+allocate sto = 
+	let loc = any_unused_location (sto) in 
+	(sto [loc→ undefined]，loc)
+deallocate (sto，loc) = sto [loc → unused]
+update (sto，loc，stble) = sto [loc→stored stble]
+fetch (sto，loc) = 
+	let stored_value (stored stble) = stble
+		stored_value (undefined) = fail
+		stored_value (unused) = fail 
+	in stored-value (sto(loc))
+push stble 
+```
+
+```
+Stack = Value value 
+● 语义函数
+push : Value → Stack
+pop : Value → Stack
+
+● 语义
+push val = 
+	let get_top()
+		Stack[top → ]
+pop val = 
+	
+```
+
+## 4.2 环境域 & 辅助函数
+
+```
+Environ = ldentifier → (bound Bindable + unbound)
+● 语义函数
+empty_environ : Environ
+bind : ldentifier×Bindable → Environ
+overlay : Environ×Environ → Environ
+find : Environ×ldentifier→Bindable
+
+● 语义
+enpty-environ = λI. unbound
+bind (I，bdble) = λI'. if I'=I then bound bdble else unbound
+overlay (env'，env) = λI. if env' (I)/=unbound then env' (I) else env (I)
+find (env，I) = 
+	let bound_value (bound bdble) = bdble
+		bound_value (unbound) = ⊥
+	in bound_value (env (I))
+```
+
+## 4.3 语义域 
+
+```
+Value = truth_value Truth_Value + integer Integer
+
+● 额外的辅助函数
+push : 
+```
+
+## 4.4 指称语义
+
+### 4.4.1 整体程序
+
+```
+PROGRAM = STACK, {EOL, STACK};
+STACK = NEWSTACK, EOL, BLOCK, EOL, ENDSTACK;
+		| NEWSTACK, EOL, STACK, EOL, ENDSTACK;
+		
+● 语义函数
+run: PROGRAM → (En)
+run_stack: STACK
+
+● 语义
+run_stack [news block ends] =
+	let newstack=*get_new_stack() in
+	*excute(block, newstack)
+```
+
+
 
 # 5. 与对标语言的差异
 
