@@ -62,11 +62,11 @@ DEF = "def";
 POP = "pop";
 PRINT = "print";
 RETURN = "return";
-KEYWORD = WHILE | BREAK | FOR | CONTINUE | IF | IFELSE | DEF | POP | PRINT | RETURN;
+KEYWORD = WHILE | FOR | IF | IFELSE | DEF ;
 ```
 ## 2.2 运算符
 ```
-OPERATOR = "+" | "add" | "-" | "sub" | "*" | "mul" | "\" | "div" | "e" | "**" | "pow" | "sqrt" | "%" | "mod";
+OPERATOR = "+" | "add" | "-" | "sub" | "*" | "mul" | "\" | "div" | "e" | "**" | "pow" | "sqrt" | "%" | "mod" | PRINT | POP | RETURN | CONTINUE | BREAK;
 JUDGE = "==" | "!=" | ">" | "<" | ">=" | "<=";
 LOGIC = "&" | "and" | "|" | "or";
 POPMARK = ",";
@@ -104,7 +104,7 @@ VARDEFBLOCK = VARDEF
 OPDEFBLOCK = OPDEF
 		   | OPDEF OPDEFBLOCK
 DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK
-OP = OPNAME | KEYWORD | OPERATOR;
+OP = OPNAME | OPERATOR;
 ITEM = VARNAME | NUMBER;
 OPITEM = ITEM POPMARK | ITEM SAVEMARK;
 OPLIST = OPITEM 
@@ -124,23 +124,24 @@ JUDGEBLOCK = JUDGELINE
 IFBLOCK = OPBLOCK JUDGEBLOCK IF EOL;
 IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
 WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
-BLOCK = DEFBLOCK
-	  | OPBLOCK 
+CALBLOCK = OPBLOCK 
 	  | JUDGEBLOCK 
 	  | IFBLOCK 
 	  | IFELSEBLOCK 
 	  | WHILEBLOCK
 	  | BLOCK BLOCK;
+BLOCK = DEFBLOCK
+	  | CALBLOCK
 ```
 
 ## 3.2 整体程序
 ```
-//STACK = NEWSTACK EOL, STACK | BLOCK，{STACK | BLOCK}, ENDSTACK;
-STACK = NEWSTACK EOL BLOCK EOL ENDSTACK
-	  | NEWSTACK EOL STACK EOL ENDSTACK
-	  | STACK EOL STACK
-
 PROGRAM = STACK
+STACK = NEWSTACK EOL STACK_BLOCK EOL ENDSTACK
+	  | STACK EOL STACK
+STACK_BLOCK = STACK 
+		    | BLOCK
+		    | STACK_BLOCK STACK_BLOCK
 ```
 
 # 4. 语义说明
@@ -148,8 +149,9 @@ PROGRAM = STACK
 ## 4.1 存储域 & 辅助函数
 
 ```
-Store = Location → ( stored Storable + undefined + unused)
-Stack = Location → Store
+内存
+Store = Location → ( stored Storable + undefined + unused + marked) // marked标记地址内容用了savemark标记
+
 ● 语义函数
 empty_store : Store
 allocate : Store → Store × Location
@@ -173,19 +175,7 @@ fetch (sto，loc) =
 push stble 
 ```
 
-```
-Stack = Value value 
-● 语义函数
-push : Value → Stack
-pop : Value → Stack
 
-● 语义
-push val = 
-	let get_top()
-		Stack[top → ]
-pop val = 
-	
-```
 
 ## 4.2 环境域 & 辅助函数
 
@@ -210,10 +200,47 @@ find (env，I) =
 ## 4.3 语义域 
 
 ```
-Value = truth_value Truth_Value + integer Integer
+值
+number = integer Integer + float Float
+Value = truth_value Truth_Value + number Number
+VAL_LENTH : 常量，为一个NUMBER所需的地址字节数
+堆栈
+Stack = Location × Location //栈起始地址 × 当前地址
+● 辅助函数
+next_loc Stack → Stack
+prev_loc Stack → Stack
 
-● 额外的辅助函数
-push : 
+next_loc sta = sta[loc1 × (loc2 + VAL_LENGTH)]
+prev_loc sta = 
+	let (loc1, loc2) = sta in
+	if (loc2 - VAL_LENGTH < loc1) then error
+	else sta[loc1 × (loc2 - 1)]
+		
+● 语义函数
+get_new_stack : Store → Stack //在内存中创建新的堆栈
+push : Stack × Store × Number → Stack × Store //将Number存入堆栈Stack
+pop : Stack × Store → Stack × Store × Number //将取出Stack顶部的Number
+stack_length : Stack → Integer //返回栈的长度
+stack_top : Stack → Location //返回当前栈顶
+
+● 语义
+get_new_stack sto = 
+	let (sto, loc) = allocate(sto) in
+	sta[loc × loc]
+push sta sto val = 
+	let sta2[loc1, loc2] = next_loc(sta) in
+	(sta2, update(sto, loc2, val))
+pop val = 
+	let (loc1, loc2) = sta in
+	let val = fetch(sto, loc2) in
+	let sta2 = prev_loc(sta) in 
+	(sta2, sto, val)
+stack_length sta = 
+	let (loc1, loc2) = sta in
+	(loc2 - loc1) / VAL_LENGTH
+stack_top sta = 
+	let (loc1, loc2) = sta in
+	loc2
 ```
 
 ## 4.4 指称语义
@@ -221,18 +248,357 @@ push :
 ### 4.4.1 整体程序
 
 ```
-PROGRAM = STACK, {EOL, STACK};
-STACK = NEWSTACK, EOL, BLOCK, EOL, ENDSTACK;
-		| NEWSTACK, EOL, STACK, EOL, ENDSTACK;
+PROGRAM = STACK
+STACK = NEWSTACK EOL STACK_BLOCK EOL ENDSTACK
+	  | STACK EOL STACK
+STACK_BLOCK = STACK 
+		    | BLOCK
+		    | STACK_BLOCK STACK_BLOCK
 		
 ● 语义函数
-run: PROGRAM → (En)
-run_stack: STACK
+run: PROGRAM → (Environ → Store → Store)
+run_stack: STACK → (Environ → Store → Store)
+run_sta_blo = (STACK + BLOCK) → (Environ × Stack → Store → Environ × Stack × Store)
+execute: BLOCK → (Environ × Stack → Store → Environ × Stack × Store)
 
 ● 语义
-run_stack [news block ends] =
-	let newstack=*get_new_stack() in
-	*excute(block, newstack)
+run [stack] env sto = run_stack [stack] env sto
+
+run_stack [news sta_blo ends] env sto =
+	let newstack = get_new_stack(sto) in
+	let (env', sta', sto') = run_sta_blo sta_blo env newstack sto in
+	(sto')
+run_stack [stack1 stack2] env sto =
+	run_stack stack2 env (run_stack stack1 env sto)
+	
+run_sta_blo [stack] env sta sto =
+	(env, run_stack [stack] env sto, sta)
+run_sta_blo [block] env sta sto =
+	execute [block] env sta sto
+run_sta_blo [sta_blo1 sta_blo2] env sta sto =
+	run_sta_blo [sta_bloc2] (run_sta_blo sta_blo1 env sta sto)
+```
+
+### 4.4.1 语句块
+
+```
+BLOCK = DEFBLOCK
+	  | CALBLOCK
+	  
+CALBLOCK = OPBLOCK 
+	  | JUDGEBLOCK 
+	  | IFBLOCK 
+	  | IFELSEBLOCK 
+	  | WHILEBLOCK
+	  | BLOCK BLOCK;
+
+● 语义函数
+execute: BLOCK → (Environ × Stack → Store → Environ × Stack × Store)
+elaborate: DEFBLOCK → (Environ × Stack → Store → Environ × Store)
+run : CALBLOCK → (Environ × Stack → Store → Stack × Store)
+
+● 语义
+execute [defblock] env sta sto = 
+	let (env', sto') = elaborate [defblock] env sta sto in
+	(env', sta, sto')
+	
+execute [calblock] env sto sta = 
+	(env, run [calblock] env sta sto)
+```
+
+#### 4.4.1.1 定义语句块
+
+```
+VARDEF = VARNAME SPACE NUMBER SPACE DEF EOL;
+OPDEF = OPNAME SPACE NUM SPACE BLOCK DEF EOL;
+DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK
+
+● 语义函数
+elaborate: DEFBLOCK → (Environ × Stack → Store → Environ × Store)
+
+● 语义函数
+elaborate [//a N def] env sta sto =  
+	let (sto'，loc)= allocate sto in
+	(bind (//a, N loc)，sto')
+elaborate [OP NUM BLOCK def] env sta sto =
+	let operation = 
+		let sta_len = stack_length(sta) in
+		if sta_len < NUM then error
+		else
+			execute BLOCK env sto sta
+	in
+	(bind (OP，operation), sto)
+```
+
+#### 4.4.1.2 变量操作
+
+```
+VARNAME = "//", NAME;
+NUMBER = INTEGER | FLOAT;
+ITEM = VARNAME | NUMBER;
+OPITEM = ITEM POPMARK | ITEM SAVEMARK;
+
+● 语义函数
+dealitem : OPITEM → (Environ × Stack → Store → Stack × Store)
+
+● 语义
+dealitem [//a,] env sta sto=
+	let loc = find (env，//a) in
+	let val = fetch(sto, loc) in
+	push sta val sto
+dealitem [//a;] =
+	let loc = find (env，//a) in
+	let val = fetch(sto, loc) in
+	let (sta', sto') = push sta val sto in
+	let loc = stack_top sta' in
+	store[loc → marked]
+dealitem [num,] =
+	push sta num sto 
+dealitem [mum;] =
+	let (sta', sto') = push sta num sto in
+	let loc = stack_top sta' in
+	store[loc → marked]
+```
+
+#### 4.4.1.3 操作语句块
+
+``` 
+OP = OPNAME | OPERATOR;
+ITEM = VARNAME | NUMBER;
+OPITEM = ITEM POPMARK | ITEM SAVEMARK;
+OPLIST = OPITEM 
+	   | OPITEM SPACE OPLIST;
+OPLINE = OP EOL
+	   | OPLIST SPACE OP EOL;
+OPLINES = OPLINE
+		| OPLINE EOL OPLINES;
+OPBLOCK = OPLINE
+	    | "{" OPLINES "}" EOL;
+	    
+● 语义函数
+do : OPLINE → (Environ × Stack → Store → Stack × Store)
+do_lines : OPLINES → (Environ × Stack → Store → Stack × Store)
+do_block : OPBLOCK → (Environ × Stack → Store → Stack × Store)
+deal_item_list : OPLIST → (Environ × Stack → Store → Stack × Store)
+calculate : OPERATOR → (Environ × Stack → Store → Stack × Store)
+
+● 语义
+do [ope] env sta sto = 
+	calculate [ope] env sta sto
+do [opn] env sta sto =  
+	let op = find (env，opn) in
+	op env sta sto
+do [opl ope]
+	let (sta', sto') = deal_item_list opl env sta sto in 
+	calculate [ope] env sta' sto'
+do [opl opn]
+	let (sta', sto') = deal_item_list opl env sta sto in
+	let op = find (env，opn) in
+	op env sta' sto'
+	
+do_lines [opl] env sta sto = 
+	do opl env sta sto
+do_lines [opl opls] env sta sto =
+	do_lines opls env (do opl env sta sto)
+	
+do_block [opl] env sta sto = 
+	do opl env sta sto
+do_block [{ \n opls \n }] env sta sto = 
+	do_lines opls env sta sto
+	
+deal_item_list [opi] env sta sto = 
+	dealitem opi env sta sto
+deal_item_list [opi opl] env sta sto =
+	deal_item_list opl env (dealitem opi env sta sto)
+```
+
+#### 4.4.1.4 表达式计算
+
+```
+OPERATOR = "+" | "add" | "-" | "sub" | "*" | "mul" | "\" | "div" | "e" | "**" | "pow" | "sqrt" | "%" | "mod" | PRINT | POP | RETURN | CONTINUE | BREAK;
+
+● 语义函数
+calculate : OPERATOR → (Environ × Stack → Store → Stack × Store)
+
+● 语义
+calculate [+] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 + x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2') //如果有标量被标记为makred，则将值存入对应的内存
+calculate [add] env sta sto = calculate [+] env sta sto
+
+calculate [-] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 - x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+calculate [sub] env sta sto = calculate [-] env sta sto
+
+calculate [*] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 * x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+calculate [mul] env sta sto = calculate [*] env sta sto
+
+calculate [\] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 + x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+calculate [div] env sta sto = calculate [\] env sta sto  
+
+calculate [**] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 ** x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+calculate [pow] env sta sto = calculate [**] env sta sto
+
+calculate [sqrt] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = sqrt(x1, x2) in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+
+calculate [%] env sta sto =
+	let (loc1, loc2) = sta in
+	let (sta', sto', x1) = pop sta sto in
+	let (loc1', loc2') = sta' in
+    let (sta'', sto'', x2) = pop sta' sto' in
+   	let result = x1 % x2 in
+   	let push sto sta result in
+   	(λI'.if sto[I' → marked] then
+   		sto[I' → storable]
+   		update sto I' result) (loc2	loc2')
+calculate [mod] env sta sto = calculate [%] env sta sto   	
+
+calculate [print] env sta sto =
+	let (sta', sto', x1) = pop sta sto in
+	print x1
+	
+calculate [pop] env sta sto = pop sta sto
+```
+
+#### 4.4.1.5 条件判断
+
+```
+JUDGEITEM = OPBLOCK | ITEM SPACE
+JUDGELINE = JUDGEITEM JUDGEITEM JUDGE EOL;
+MULTIJUDGELINE = JUDGELINE
+		       | JUDGELINE LOGIC SPACE JUDGELINES
+JUDGEBLOCK = JUDGELINE 
+		   | "{" JUDGELINE LOGIC SPACE MULTIJUDGELINE "}" EOL;
+
+● 语义函数
+get_result : JUDGEITEM → (Environ × Stack → Store → Value)
+judge : JUDGELINE → (Environ × Stack → Store → Value)
+judge_muilt : MULTIJUDGELINE → (Environ × Stack → Store → Value)
+judge_blcok : JUDGEBLOCK → (Environ × Stack → Store → Value)
+
+● 语义
+get_result [opblock] env sta sto =
+	let (sta', sto') = do_block opblock env sta sto in
+	let (sta'', sto'', val) = pop sta' sto' in 
+	val
+get_result [//a] env sta sto = 
+	let loc = find (env，//a) in
+	fetch(sto, loc)
+get_result [number] env sta sto = number
+
+judge [jitem1 jitem2 ==] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 == v2 then true else false
+judge [jitem1 jitem2 !=] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 != v2 then true else false
+judge [jitem1 jitem2 <] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 < v2 then true else false
+judge [jitem1 jitem2 >] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 > v2 then true else false
+judge [jitem1 jitem2 <=] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 <= v2 then true else false
+judge [jitem1 jitem2 >=] env sta sto =
+	let v1 = get_result jitem1 env sta sto in
+	let v2 = get_result jitem2 env sta sto in
+	if v1 >= v2 then true else false
+
+judge_muilt [jline] env sta sto = judge [jline] env sta sto
+judge_muilt [jline == jmuilt] = 
+	let v1 = judge jline1 env sta sto in
+	let v2 = judge_muilt jmuilt env sta sto in
+	if v1 >= v2 then true else false
+```
+
+#### 4.4.1.6 循环和条件块
+
+```
+IFBLOCK = OPBLOCK JUDGEBLOCK IF EOL;
+IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
+WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
+
+● 语义函数
+do_ifb : IFBLOCK → (Environ × Stack → Store → Stack × Store)
+do_ifelb : IFELSEBLOCK → (Environ × Stack → Store → Stack × Store)
+do_wb : WHILEBLOCK → (Environ × Stack → Store → Stack × Store)
+
+● 语义
+do_ifb [block jblock if] env sta sto =
+	let v1 = judge_block jblock env sta sto in
+    if v1 then do_bock block env sta sto
+
+do_ifelb [block1 block2 jblock ifelse] env sta sto = 
+	let v1 = judge_block jblock env sta sto in
+    if v1 then do_bock block1 env sta sto 
+    	else do_bock block2 env sta sto
+
+do_wb [block jblock while] env sta sto =
+	let do_while env sta sto = 
+		let v1 = judge_block jblock env sta sto in
+		if v1 then
+			do_while env (do_block block env sta sto)
+		else (sta, sto)
+	in
+	do_while
 ```
 
 
