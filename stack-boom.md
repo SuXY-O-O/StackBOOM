@@ -128,10 +128,10 @@ CALBLOCK = OPBLOCK
 	  | JUDGEBLOCK 
 	  | IFBLOCK 
 	  | IFELSEBLOCK 
-	  | WHILEBLOCK
-	  | BLOCK BLOCK;
+	  | WHILEBLOCK ;
 BLOCK = DEFBLOCK
 	  | CALBLOCK
+	  | BLOCK BLOCK;
 ```
 
 ## 3.2 整体程序
@@ -284,18 +284,18 @@ run_sta_blo [sta_blo1 sta_blo2] env sta sto =
 ```
 BLOCK = DEFBLOCK
 	  | CALBLOCK
+	  | BLOCK BLOCK;
 	  
 CALBLOCK = OPBLOCK 
 	  | JUDGEBLOCK 
 	  | IFBLOCK 
 	  | IFELSEBLOCK 
-	  | WHILEBLOCK
-	  | BLOCK BLOCK;
+	  | WHILEBLOCK ;
 
 ● 语义函数
 execute: BLOCK → (Environ × Stack → Store → Environ × Stack × Store)
 elaborate: DEFBLOCK → (Environ × Stack → Store → Environ × Store)
-run : CALBLOCK → (Environ × Stack → Store → Stack × Store)
+cal_block : CALBLOCK → (Environ × Stack → Store → Stack × Store)
 
 ● 语义
 execute [defblock] env sta sto = 
@@ -303,7 +303,10 @@ execute [defblock] env sta sto =
 	(env', sta, sto')
 	
 execute [calblock] env sto sta = 
-	(env, run [calblock] env sta sto)
+	(env, cal_block [calblock] env sta sto)
+	
+execute [block1 block2] env sto sta = 
+	execute block2 (execute block1 env sto sta)
 ```
 
 #### 4.4.1.1 定义语句块
@@ -378,7 +381,7 @@ OPBLOCK = OPLINE
 ● 语义函数
 do : OPLINE → (Environ × Stack → Store → Stack × Store)
 do_lines : OPLINES → (Environ × Stack → Store → Stack × Store)
-do_block : OPBLOCK → (Environ × Stack → Store → Stack × Store)
+cal_block : CALBLOCK→ (Environ × Stack → Store → Stack × Store)
 deal_item_list : OPLIST → (Environ × Stack → Store → Stack × Store)
 calculate : OPERATOR → (Environ × Stack → Store → Stack × Store)
 
@@ -401,9 +404,9 @@ do_lines [opl] env sta sto =
 do_lines [opl opls] env sta sto =
 	do_lines opls env (do opl env sta sto)
 	
-do_block [opl] env sta sto = 
+cal_block [opl] env sta sto = 
 	do opl env sta sto
-do_block [{ \n opls \n }] env sta sto = 
+cal_block [{ \n opls \n }] env sta sto = 
 	do_lines opls env sta sto
 	
 deal_item_list [opi] env sta sto = 
@@ -525,11 +528,11 @@ JUDGEBLOCK = JUDGELINE
 get_result : JUDGEITEM → (Environ × Stack → Store → Value)
 judge : JUDGELINE → (Environ × Stack → Store → Value)
 judge_muilt : MULTIJUDGELINE → (Environ × Stack → Store → Value)
-judge_blcok : JUDGEBLOCK → (Environ × Stack → Store → Value)
+judge_blcok : CALBLOCK → (Environ × Stack → Store → Value)
 
 ● 语义
 get_result [opblock] env sta sto =
-	let (sta', sto') = do_block opblock env sta sto in
+	let (sta', sto') = cal_block opblock env sta sto in
 	let (sta'', sto'', val) = pop sta' sto' in 
 	val
 get_result [//a] env sta sto = 
@@ -577,9 +580,7 @@ IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
 WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
 
 ● 语义函数
-do_ifb : IFBLOCK → (Environ × Stack → Store → Stack × Store)
-do_ifelb : IFELSEBLOCK → (Environ × Stack → Store → Stack × Store)
-do_wb : WHILEBLOCK → (Environ × Stack → Store → Stack × Store)
+cal_block : CALBLOCK → (Environ × Stack → Store → Stack × Store)
 
 ● 语义
 do_ifb [block jblock if] env sta sto =
@@ -595,7 +596,7 @@ do_wb [block jblock while] env sta sto =
 	let do_while env sta sto = 
 		let v1 = judge_block jblock env sta sto in
 		if v1 then
-			do_while env (do_block block env sta sto)
+			do_while env (cal_block block env sta sto)
 		else (sta, sto)
 	in
 	do_while
