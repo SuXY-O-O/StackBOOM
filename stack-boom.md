@@ -97,51 +97,34 @@ NUMBER = INTEGER | FLOAT;
 
 ## 3.1 语句与语句块
 ```
-VARDEF = VARNAME SPACE NUMBER SPACE DEF EOL;
-OPDEF = OPNAME SPACE NUM SPACE BLOCK DEF EOL;
-VARDEFBLOCK = VARDEF
-			| VARDEF VARDEFBLOCK
-OPDEFBLOCK = OPDEF
-		   | OPDEF OPDEFBLOCK
-DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK
+VARDEF = VARNAME, SPACE, NUMBER, SPACE, DEF, EOL;
+OPDEF = OPNAME, SPACE, NUM, SPACE, BLOCK, DEF, EOL;
+VARDEFBLOCK = VARDEF | (VARDEF, VARDEFBLOCK);
+OPDEFBLOCK = OPDEF | (OPDEF, OPDEFBLOCK);
+DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK;
 OP = OPNAME | OPERATOR;
 ITEM = VARNAME | NUMBER;
-OPITEM = ITEM POPMARK | ITEM SAVEMARK;
-OPLIST = OPITEM 
-	   | OPITEM SPACE OPLIST;
-OPLINE = OP EOL
-	   | OPLIST SPACE OP EOL;
-OPLINES = OPLINE
-		| OPLINE EOL OPLINES;
-OPBLOCK = OPLINE
-	    | "{" OPLINES "}" EOL;
-JUDGEITEM = OPBLOCK | ITEM SPACE
-JUDGELINE = JUDGEITEM JUDGEITEM JUDGE EOL;
-MULTIJUDGELINE = JUDGELINE
-		       | JUDGELINE LOGIC SPACE JUDGELINES
-JUDGEBLOCK = JUDGELINE 
-		   | "{" JUDGELINE LOGIC SPACE MULTIJUDGELINE "}" EOL;
-IFBLOCK = OPBLOCK JUDGEBLOCK IF EOL;
-IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
-WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
-CALBLOCK = OPBLOCK 
-	  | JUDGEBLOCK 
-	  | IFBLOCK 
-	  | IFELSEBLOCK 
-	  | WHILEBLOCK ;
-BLOCK = DEFBLOCK
-	  | CALBLOCK
-	  | BLOCK BLOCK;
+OPITEM = (ITEM, POPMARK) | (ITEM, SAVEMARK);
+OPLIST = OPITEM | (OPITEM, SPACE, OPLIST);
+OPLINE = (OP, EOL) | (OPLIST, SPACE, OP, EOL);
+OPLINES = OPLINE | (OPLINE, EOL, OPLINES);
+OPBLOCK = OPLINE | ("{", OPLINES, "}", EOL);
+JUDGEITEM = OPBLOCK | (ITEM, SPACE);
+JUDGELINE = JUDGEITEM, JUDGEITEM, JUDGE, EOL;
+MULTIJUDGELINE = JUDGELINE | (JUDGELINE, SPACE, LOGIC, SPACE, MULTIJUDGELINE);
+JUDGEBLOCK = JUDGELINE | ("{", JUDGELINE, LOGIC, SPACE, MULTIJUDGELINE, "}", EOL);
+IFBLOCK = OPBLOCK, JUDGEBLOCK, IF, EOL;
+IFELSEBLOCK = OPBLOCK, OPBLOCK, JUDGEBLOCK, IFELSE, EOL;
+WHILEBLOCK = OPBLOCK, JUDGEBLOCK, WHILE, EOL; 
+CALBLOCK = OPBLOCK | JUDGEBLOCK | IFBLOCK | IFELSEBLOCK | WHILEBLOCK;
+BLOCK = DEFBLOCK | CALBLOCK | (BLOCK, BLOCK);
 ```
 
 ## 3.2 整体程序
 ```
-PROGRAM = STACK
-STACK = NEWSTACK EOL STACK_BLOCK EOL ENDSTACK
-	  | STACK EOL STACK
-STACK_BLOCK = STACK 
-		    | BLOCK
-		    | STACK_BLOCK STACK_BLOCK
+PROGRAM = STACK;
+STACK = (NEWSTACK, EOL, STACK_BLOCK, EOL, ENDSTACK) | (STACK, EOL, STACK);
+STACK_BLOCK = STACK | BLOCK | (STACK_BLOCK, STACK_BLOCK);
 ```
 
 # 4. 语义说明
@@ -248,12 +231,9 @@ stack_top sta =
 ### 4.4.1 整体程序
 
 ```
-PROGRAM = STACK
-STACK = NEWSTACK EOL STACK_BLOCK EOL ENDSTACK
-	  | STACK EOL STACK
-STACK_BLOCK = STACK 
-		    | BLOCK
-		    | STACK_BLOCK STACK_BLOCK
+PROGRAM = STACK;
+STACK = (NEWSTACK, EOL, STACK_BLOCK, EOL, ENDSTACK) | (STACK, EOL, STACK);
+STACK_BLOCK = STACK | BLOCK | (STACK_BLOCK, STACK_BLOCK);
 		
 ● 语义函数
 run: PROGRAM → (Environ → Store → Store)
@@ -282,15 +262,7 @@ run_sta_blo [sta_blo1 sta_blo2] env sta sto =
 ### 4.4.1 语句块
 
 ```
-BLOCK = DEFBLOCK
-	  | CALBLOCK
-	  | BLOCK BLOCK;
-	  
-CALBLOCK = OPBLOCK 
-	  | JUDGEBLOCK 
-	  | IFBLOCK 
-	  | IFELSEBLOCK 
-	  | WHILEBLOCK ;
+BLOCK = DEFBLOCK | CALBLOCK | (BLOCK, BLOCK);
 
 ● 语义函数
 execute: BLOCK → (Environ × Stack → Store → Environ × Stack × Store)
@@ -312,9 +284,11 @@ execute [block1 block2] env sto sta =
 #### 4.4.1.1 定义语句块
 
 ```
-VARDEF = VARNAME SPACE NUMBER SPACE DEF EOL;
-OPDEF = OPNAME SPACE NUM SPACE BLOCK DEF EOL;
-DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK
+VARDEF = VARNAME, SPACE, NUMBER, SPACE, DEF, EOL;
+OPDEF = OPNAME, SPACE, NUM, SPACE, BLOCK, DEF, EOL;
+VARDEFBLOCK = VARDEF | (VARDEF, VARDEFBLOCK);
+OPDEFBLOCK = OPDEF | (OPDEF, OPDEFBLOCK);
+DEFBLOCK = VARDEFBLOCK | OPDEFBLOCK;
 
 ● 语义函数
 elaborate: DEFBLOCK → (Environ × Stack → Store → Environ × Store)
@@ -323,6 +297,10 @@ elaborate: DEFBLOCK → (Environ × Stack → Store → Environ × Store)
 elaborate [//a N def] env sta sto =  
 	let (sto'，loc)= allocate sto in
 	(bind (//a, N loc)，sto')
+elaborate [vardef1 vardefblock] env sta sto =
+	let (env', sto') = elaborate vardef1 env sta sto in
+	elaborate vardefblock env' sta sto' 
+
 elaborate [OP NUM BLOCK def] env sta sto =
 	let operation = 
 		let sta_len = stack_length(sta) in
@@ -331,6 +309,9 @@ elaborate [OP NUM BLOCK def] env sta sto =
 			execute BLOCK env sto sta
 	in
 	(bind (OP，operation), sto)
+elaborate [opdef1 opdefblock] env sta sto =
+	let (env', sto') = elaborate opdef1 env sta sto in
+	elaborate opdefblock env' sta sto' 	
 ```
 
 #### 4.4.1.2 变量操作
@@ -368,15 +349,11 @@ dealitem [mum;] =
 ``` 
 OP = OPNAME | OPERATOR;
 ITEM = VARNAME | NUMBER;
-OPITEM = ITEM POPMARK | ITEM SAVEMARK;
-OPLIST = OPITEM 
-	   | OPITEM SPACE OPLIST;
-OPLINE = OP EOL
-	   | OPLIST SPACE OP EOL;
-OPLINES = OPLINE
-		| OPLINE EOL OPLINES;
-OPBLOCK = OPLINE
-	    | "{" OPLINES "}" EOL;
+OPITEM = (ITEM, POPMARK) | (ITEM, SAVEMARK);
+OPLIST = OPITEM | (OPITEM, SPACE, OPLIST);
+OPLINE = (OP, EOL) | (OPLIST, SPACE, OP, EOL);
+OPLINES = OPLINE | (OPLINE, EOL, OPLINES);
+OPBLOCK = OPLINE | ("{", OPLINES, "}", EOL);
 	    
 ● 语义函数
 do : OPLINE → (Environ × Stack → Store → Stack × Store)
@@ -517,18 +494,16 @@ calculate [pop] env sta sto = pop sta sto
 #### 4.4.1.5 条件判断
 
 ```
-JUDGEITEM = OPBLOCK | ITEM SPACE
-JUDGELINE = JUDGEITEM JUDGEITEM JUDGE EOL;
-MULTIJUDGELINE = JUDGELINE
-		       | JUDGELINE LOGIC SPACE JUDGELINES
-JUDGEBLOCK = JUDGELINE 
-		   | "{" JUDGELINE LOGIC SPACE MULTIJUDGELINE "}" EOL;
+JUDGEITEM = OPBLOCK | (ITEM, SPACE);
+JUDGELINE = JUDGEITEM, JUDGEITEM, JUDGE, EOL;
+MULTIJUDGELINE = JUDGELINE | (JUDGELINE, SPACE, LOGIC, SPACE, MULTIJUDGELINE);
+JUDGEBLOCK = JUDGELINE | ("{", JUDGELINE, LOGIC, SPACE, MULTIJUDGELINE, "}", EOL);
 
 ● 语义函数
 get_result : JUDGEITEM → (Environ × Stack → Store → Value)
 judge : JUDGELINE → (Environ × Stack → Store → Value)
 judge_muilt : MULTIJUDGELINE → (Environ × Stack → Store → Value)
-judge_blcok : CALBLOCK → (Environ × Stack → Store → Value)
+cal_block : CALBLOCK → (Environ × Stack → Store → Value)
 
 ● 语义
 get_result [opblock] env sta sto =
@@ -575,26 +550,26 @@ judge_muilt [jline == jmuilt] =
 #### 4.4.1.6 循环和条件块
 
 ```
-IFBLOCK = OPBLOCK JUDGEBLOCK IF EOL;
-IFELSEBLOCK = OPBLOCK OPBLOCK JUDGEBLOCK IFELSE EOL;
-WHILEBLOCK = OPBLOCK JUDGEBLOCK WHILE EOL; 
+IFBLOCK = OPBLOCK, JUDGEBLOCK, IF, EOL;
+IFELSEBLOCK = OPBLOCK, OPBLOCK, JUDGEBLOCK, IFELSE, EOL;
+WHILEBLOCK = OPBLOCK, JUDGEBLOCK, WHILE, EOL; 
 
 ● 语义函数
 cal_block : CALBLOCK → (Environ × Stack → Store → Stack × Store)
 
 ● 语义
-do_ifb [block jblock if] env sta sto =
-	let v1 = judge_block jblock env sta sto in
+cal_block [block jblock if] env sta sto =
+	let v1 = cal_block jblock env sta sto in
     if v1 then do_bock block env sta sto
 
-do_ifelb [block1 block2 jblock ifelse] env sta sto = 
-	let v1 = judge_block jblock env sta sto in
+cal_block [block1 block2 jblock ifelse] env sta sto = 
+	let v1 = cal_block jblock env sta sto in
     if v1 then do_bock block1 env sta sto 
     	else do_bock block2 env sta sto
 
-do_wb [block jblock while] env sta sto =
+cal_block [block jblock while] env sta sto =
 	let do_while env sta sto = 
-		let v1 = judge_block jblock env sta sto in
+		let v1 = cal_block jblock env sta sto in
 		if v1 then
 			do_while env (cal_block block env sta sto)
 		else (sta, sto)
@@ -682,6 +657,5 @@ ends
 - 传入的第三个参数意义为6.1中的`//i`，对它的值进行读取，并判断是否结束递归。
 
 ## 6.3 多线程
-本语言的`NEWSTACK`和`ENDSTACK`中间囊括的代码段运行时使用了“同一个栈”，换句话说可以认为该段程序运行在一个线程上。
-
-这里将不再给出具体示例，仅为指出如此设计的目的。
+本语言的`NEWSTACK`和`ENDSTACK`中间囊括的代码段运行时使用了“同一个栈”，换句话说可以认为该段程序运行在一个线程上。因此，`NEWSTACK`和`ENDSTACK`关键字并不是像其他语言中大括号或者`Begin`、`End`等符号一样，仅仅指示一段程序的开始与结束，而是可以指示多个不同线程的代码段。
+这里将不再使用完整程序进行示例。
